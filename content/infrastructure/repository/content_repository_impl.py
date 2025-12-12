@@ -445,6 +445,11 @@ class ContentRepositoryImpl(ContentRepositoryPort):
         """
         카테고리 내 최근 수집 콘텐츠를 점수 기반으로 추천한다.
         """
+        # 이전 예외로 인한 pending rollback 상태 방지
+        try:
+            self.db.rollback()
+        except Exception:
+            pass
         since = datetime.utcnow() - timedelta(days=days)
         rows = self.db.execute(
             text(
@@ -487,6 +492,10 @@ class ContentRepositoryImpl(ContentRepositoryPort):
         """
         등록된 카테고리 목록만 조회(관심사 등록용).
         """
+        try:
+            self.db.rollback()
+        except Exception:
+            pass
         rows = self.db.execute(
             text(
                 """
