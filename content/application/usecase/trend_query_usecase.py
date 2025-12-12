@@ -15,3 +15,6 @@ class TrendQueryUseCase:
         return self.repository.fetch_recommended_videos_by_category(
             category=category, limit=limit, days=days, platform=platform
         )
+
+    def get_categories(self, limit: int = 100) -> list[str]:
+        return self.repository.fetch_distinct_categories(limit=limit)

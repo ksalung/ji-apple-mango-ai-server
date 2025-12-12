@@ -42,3 +42,14 @@ async def get_category_recommendations(
         raise HTTPException(status_code=404, detail="추천 가능한 콘텐츠가 없습니다.")
     # datetime/date 등이 JSON 직렬화 오류를 내지 않도록 변환
     return JSONResponse(jsonable_encoder({"category": category, "items": items}))
+
+
+@trend_router.get("/categories")
+async def list_categories(limit: int = Query(default=100, ge=1, le=500)):
+    """
+    관심사 등록용 카테고리 목록을 조회한다.
+    """
+    categories = usecase.get_categories(limit=limit)
+    if not categories:
+        raise HTTPException(status_code=404, detail="등록된 카테고리가 없습니다.")
+    return JSONResponse(jsonable_encoder({"categories": categories}))
