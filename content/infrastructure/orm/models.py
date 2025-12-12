@@ -1,5 +1,5 @@
 from datetime import datetime, date
-from sqlalchemy import Column, String, Text, BigInteger, Integer, DateTime, Date, DECIMAL
+from sqlalchemy import Column, String, Text, BigInteger, Integer, DateTime, Date, DECIMAL, PrimaryKeyConstraint, text
 
 from config.database.session import Base
 
@@ -97,10 +97,13 @@ class KeywordTrendORM(Base):
     date = Column(Date, primary_key=True)
     platform = Column(String(50), primary_key=True)
     search_volume = Column(Integer)
+    search_volume_prev = Column(BigInteger)
     video_count = Column(Integer)
+    video_count_prev = Column(Integer)
     avg_sentiment = Column(DECIMAL(5, 4))
     avg_trend = Column(DECIMAL(5, 4))
     avg_total_score = Column(DECIMAL(6, 3))
+    growth_rate = Column(DECIMAL(18, 4))
     rank = Column(Integer)
 
 
@@ -111,17 +114,28 @@ class CategoryTrendORM(Base):
     date = Column(Date, primary_key=True)
     platform = Column(String(50), primary_key=True)
     video_count = Column(Integer)
+    video_count_prev = Column(Integer)
     avg_sentiment = Column(DECIMAL(5, 4))
     avg_trend = Column(DECIMAL(5, 4))
     avg_total_score = Column(DECIMAL(6, 3))
     search_volume = Column(BigInteger)
+    search_volume_prev = Column(BigInteger)
+    growth_rate = Column(DECIMAL(18, 4))
     rank = Column(Integer)
 
 
 class KeywordMappingORM(Base):
     __tablename__ = "keyword_mapping"
+    __table_args__ = (
+        PrimaryKeyConstraint("video_id", "keyword", "platform", name="pk_keyword_mapping"),
+    )
 
-    mapping_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    # 서버 기본값(nextval)로 채워지도록 server_default 지정, 애플리케이션에서는 직접 값 지정하지 않는다.
+    mapping_id = Column(
+        BigInteger,
+        nullable=False,
+        server_default=text("nextval('keyword_mapping_mapping_id_seq'::regclass)"),
+    )
     video_id = Column(String(100))
     channel_id = Column(String(100))
     platform = Column(String(50), default="youtube")

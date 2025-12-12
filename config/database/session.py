@@ -29,3 +29,10 @@ Base = declarative_base()
 
 def get_db_session():
     return SessionLocal()
+
+
+def init_db_schema():
+    """
+    애플리케이션 기동 시 테이블이 없을 경우를 대비해 스키마를 생성합니다.
+    """
+    Base.metadata.create_all(bind=engine)

@@ -1,4 +1,7 @@
 from typing import Iterable
+from datetime import datetime, timedelta
+
+from sqlalchemy import text
 
 from config.database.session import SessionLocal
 from content.application.port.content_repository_port import ContentRepositoryPort
@@ -162,10 +165,13 @@ class ContentRepositoryImpl(ContentRepositoryPort):
             )
             self.db.add(orm)
         orm.search_volume = trend.search_volume
+        orm.search_volume_prev = trend.search_volume_prev
         orm.video_count = trend.video_count
+        orm.video_count_prev = trend.video_count_prev
         orm.avg_sentiment = trend.avg_sentiment
         orm.avg_trend = trend.avg_trend
         orm.avg_total_score = trend.avg_total_score
+        orm.growth_rate = trend.growth_rate
         orm.rank = trend.rank
         self.db.commit()
         return trend
@@ -186,28 +192,41 @@ class ContentRepositoryImpl(ContentRepositoryPort):
             )
             self.db.add(orm)
         orm.video_count = trend.video_count
+        orm.video_count_prev = trend.video_count_prev
         orm.avg_sentiment = trend.avg_sentiment
         orm.avg_trend = trend.avg_trend
         orm.avg_total_score = trend.avg_total_score
         orm.search_volume = trend.search_volume
+        orm.search_volume_prev = trend.search_volume_prev
+        orm.growth_rate = trend.growth_rate
         orm.rank = trend.rank
         self.db.commit()
         return trend
 
     def upsert_keyword_mapping(self, mapping: KeywordMapping) -> KeywordMapping:
+        # 동일 (video_id, keyword, platform) 조합 중복 삽입을 막기 위해 조회 후 갱신/신규 생성
+        platform = mapping.platform or "youtube"
         orm = None
-        if mapping.mapping_id:
-            orm = self.db.get(KeywordMappingORM, mapping.mapping_id)
+        if mapping.video_id and mapping.keyword:
+            orm = (
+                self.db.query(KeywordMappingORM)
+                .filter(
+                    KeywordMappingORM.video_id == mapping.video_id,
+                    KeywordMappingORM.keyword == mapping.keyword,
+                    KeywordMappingORM.platform == platform,
+                )
+                .one_or_none()
+            )
         if orm is None:
             orm = KeywordMappingORM()
             self.db.add(orm)
-        orm.platform = mapping.platform or "youtube"
+        orm.platform = platform
         orm.video_id = mapping.video_id
         orm.channel_id = mapping.channel_id
         orm.keyword = mapping.keyword
         orm.weight = mapping.weight
         self.db.commit()
-        mapping.mapping_id = orm.mapping_id
+        mapping.mapping_id = getattr(orm, "mapping_id", None)
         return mapping
 
     def upsert_video_score(self, score: VideoScore) -> VideoScore:
@@ -236,3 +255,230 @@ class ContentRepositoryImpl(ContentRepositoryPort):
         self.db.commit()
         log.id = orm.id
         return log
+
+    def fetch_videos_by_category(self, category: str, limit: int = 20) -> list[dict]:
+        """
+        카테고리 기준 상위 콘텐츠를 점수/조회수 기반으로 조회한다.
+        """
+        rows = self.db.execute(
+            text(
+                """
+                SELECT
+                    v.video_id,
+                    v.title,
+                    v.channel_id,
+                    v.platform,
+                    v.view_count,
+                    v.like_count,
+                    v.comment_count,
+                    v.published_at,
+                    v.thumbnail_url,
+                    vs.category,
+                    vs.sentiment_label,
+                    vs.sentiment_score,
+                    vs.trend_score,
+                    sc.engagement_score,
+                    sc.sentiment_score AS score_sentiment,
+                    sc.trend_score AS score_trend,
+                    sc.total_score
+                FROM video v
+                LEFT JOIN video_sentiment vs ON vs.video_id = v.video_id
+                LEFT JOIN video_score sc ON sc.video_id = v.video_id
+                WHERE vs.category = :category
+                ORDER BY COALESCE(sc.total_score, sc.sentiment_score, sc.trend_score, v.view_count) DESC NULLS LAST,
+                         v.crawled_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"category": category, "limit": limit},
+        ).mappings()
+        return [dict(row) for row in rows]
+
+    def fetch_videos_by_keyword(self, keyword: str, limit: int = 20) -> list[dict]:
+        """
+        키워드 기준 상위 콘텐츠를 점수/조회수 기반으로 조회한다.
+        """
+        rows = self.db.execute(
+            text(
+                """
+                SELECT
+                    v.video_id,
+                    v.title,
+                    v.channel_id,
+                    v.platform,
+                    v.view_count,
+                    v.like_count,
+                    v.comment_count,
+                    v.published_at,
+                    v.thumbnail_url,
+                    vs.category,
+                    vs.sentiment_label,
+                    vs.sentiment_score,
+                    vs.trend_score,
+                    sc.engagement_score,
+                    sc.sentiment_score AS score_sentiment,
+                    sc.trend_score AS score_trend,
+                    sc.total_score
+                FROM keyword_mapping km
+                JOIN video v ON v.video_id = km.video_id
+                LEFT JOIN video_sentiment vs ON vs.video_id = v.video_id
+                LEFT JOIN video_score sc ON sc.video_id = v.video_id
+                WHERE km.keyword = :keyword
+                ORDER BY COALESCE(sc.total_score, sc.sentiment_score, sc.trend_score, v.view_count) DESC NULLS LAST,
+                         v.crawled_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"keyword": keyword, "limit": limit},
+        ).mappings()
+        return [dict(row) for row in rows]
+
+    def fetch_top_keywords_by_category(self, category: str, limit: int = 10) -> list[dict]:
+        """
+        특정 카테고리 내 콘텐츠에서 많이 등장한 주요 키워드를 빈도순으로 조회한다.
+        """
+        rows = self.db.execute(
+            text(
+                """
+                SELECT
+                    km.keyword,
+                    COUNT(DISTINCT km.video_id) AS video_count
+                FROM keyword_mapping km
+                JOIN video_sentiment vs ON vs.video_id = km.video_id
+                WHERE vs.category = :category
+                GROUP BY km.keyword
+                ORDER BY COUNT(DISTINCT km.video_id) DESC, km.keyword
+                LIMIT :limit
+                """
+            ),
+            {"category": category, "limit": limit},
+        ).mappings()
+        return [dict(row) for row in rows]
+
+    def fetch_top_keywords_by_keyword(self, keyword: str, limit: int = 10) -> list[dict]:
+        """
+        특정 키워드와 함께 등장한 연관 키워드를 빈도순으로 조회한다.
+        """
+        rows = self.db.execute(
+            text(
+                """
+                SELECT
+                    km2.keyword,
+                    COUNT(DISTINCT km2.video_id) AS video_count
+                FROM keyword_mapping km_target
+                JOIN keyword_mapping km2 ON km_target.video_id = km2.video_id
+                WHERE km_target.keyword = :keyword
+                  AND km2.keyword <> :keyword
+                GROUP BY km2.keyword
+                ORDER BY COUNT(DISTINCT km2.video_id) DESC, km2.keyword
+                LIMIT :limit
+                """
+            ),
+            {"keyword": keyword, "limit": limit},
+        ).mappings()
+        return [dict(row) for row in rows]
+
+    def fetch_video_with_scores(self, video_id: str) -> dict | None:
+        """
+        콘텐츠 단건 상세(점수/키워드 포함)를 조회한다.
+        """
+        video = self.db.execute(
+            text(
+                """
+                SELECT v.video_id, v.title, v.channel_id, v.platform, v.view_count, v.like_count, v.comment_count,
+                       v.published_at, v.thumbnail_url,
+                       vs.category, vs.sentiment_label, vs.sentiment_score, vs.trend_score, vs.keywords, vs.summary,
+                       sc.engagement_score, sc.sentiment_score AS score_sentiment, sc.trend_score AS score_trend, sc.total_score,
+                       vs.analyzed_at
+                FROM video v
+                LEFT JOIN video_sentiment vs ON vs.video_id = v.video_id
+                LEFT JOIN video_score sc ON sc.video_id = v.video_id
+                WHERE v.video_id = :video_id
+                """
+            ),
+            {"video_id": video_id},
+        ).mappings().first()
+
+        if not video:
+            return None
+
+        keywords = self.db.execute(
+            text(
+                """
+                SELECT keyword, weight, platform, video_id, channel_id
+                FROM keyword_mapping
+                WHERE video_id = :video_id
+                ORDER BY weight DESC NULLS LAST, keyword
+                """
+            ),
+            {"video_id": video_id},
+        ).mappings().all()
+
+        return {"video": dict(video), "keywords": [dict(k) for k in keywords]}
+
+    def fetch_hot_category_trends(self, platform: str | None = None, limit: int = 20) -> list[dict]:
+        """
+        최신 집계 일자의 카테고리별 랭킹을 반환한다.
+        """
+        rows = self.db.execute(
+            text(
+                """
+                SELECT category, platform, date, video_count, video_count_prev,
+                       avg_sentiment, avg_trend, avg_total_score,
+                       search_volume, search_volume_prev, growth_rate, rank
+                FROM category_trend
+                WHERE date = (
+                    SELECT MAX(date) FROM category_trend WHERE (:platform IS NULL OR platform = :platform)
+                )
+                  AND (:platform IS NULL OR platform = :platform)
+                ORDER BY rank ASC NULLS LAST, search_volume DESC NULLS LAST
+                LIMIT :limit
+                """
+            ),
+            {"platform": platform, "limit": limit},
+        ).mappings()
+        return [dict(r) for r in rows]
+
+    def fetch_recommended_videos_by_category(
+        self, category: str, limit: int = 20, days: int = 14, platform: str | None = None
+    ) -> list[dict]:
+        """
+        카테고리 내 최근 수집 콘텐츠를 점수 기반으로 추천한다.
+        """
+        since = datetime.utcnow() - timedelta(days=days)
+        rows = self.db.execute(
+            text(
+                """
+                SELECT
+                    v.video_id,
+                    v.title,
+                    v.channel_id,
+                    v.platform,
+                    v.view_count,
+                    v.like_count,
+                    v.comment_count,
+                    v.published_at,
+                    v.thumbnail_url,
+                    vs.category,
+                    vs.sentiment_label,
+                    vs.sentiment_score,
+                    vs.trend_score,
+                    sc.engagement_score,
+                    sc.sentiment_score AS score_sentiment,
+                    sc.trend_score AS score_trend,
+                    sc.total_score,
+                    v.crawled_at
+                FROM video v
+                JOIN video_sentiment vs ON vs.video_id = v.video_id
+                LEFT JOIN video_score sc ON sc.video_id = v.video_id
+                WHERE vs.category = :category
+                  AND v.crawled_at >= :since
+                  AND (:platform IS NULL OR v.platform = :platform)
+                ORDER BY COALESCE(sc.total_score, sc.sentiment_score, sc.trend_score, v.view_count) DESC NULLS LAST,
+                         v.crawled_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"category": category, "since": since, "platform": platform, "limit": limit},
+        ).mappings()
+        return [dict(r) for r in rows]
