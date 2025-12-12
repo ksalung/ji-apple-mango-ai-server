@@ -89,3 +89,7 @@ class ContentRepositoryPort(ABC):
         self, category: str, limit: int = 20, days: int = 14, platform: str | None = None
     ) -> list[dict]:
         raise NotImplementedError
+
+    @abstractmethod
+    def fetch_distinct_categories(self, limit: int = 100) -> list[str]:
+        raise NotImplementedError

@@ -482,3 +482,23 @@ class ContentRepositoryImpl(ContentRepositoryPort):
             {"category": category, "since": since, "platform": platform, "limit": limit},
         ).mappings()
         return [dict(r) for r in rows]
+
+    def fetch_distinct_categories(self, limit: int = 100) -> list[str]:
+        """
+        등록된 카테고리 목록만 조회(관심사 등록용).
+        """
+        rows = self.db.execute(
+            text(
+                """
+                SELECT category FROM (
+                    SELECT DISTINCT category FROM video_sentiment WHERE category IS NOT NULL
+                    UNION
+                    SELECT DISTINCT category FROM category_trend WHERE category IS NOT NULL
+                ) c
+                ORDER BY category
+                LIMIT :limit
+                """
+            ),
+            {"limit": limit},
+        ).scalars()
+        return list(rows)
