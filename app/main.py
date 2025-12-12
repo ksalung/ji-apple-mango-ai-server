@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
     FastAPI lifespan 훅을 활용해 배치 태스크와 리소스를 관리합니다.
     """
     # DB 스키마 미존재 시 자동 생성하여 UndefinedTable 오류를 예방합니다.
-    init_db_schema()
+    # init_db_schema()
     app.state.trend_task = asyncio.create_task(start_trend_scheduler())
     try:
         yield

@@ -472,10 +472,17 @@ class ContentRepositoryImpl(ContentRepositoryPort):
                     sc.sentiment_score AS score_sentiment,
                     sc.trend_score AS score_trend,
                     sc.total_score,
-                    v.crawled_at
+                    v.crawled_at,
+                    -- username(또는 display_name/title)을 단 한 번만 @로 prefix 하여 프런트에 바로 전달
+                    CASE
+                        WHEN COALESCE(ca.username, ca.display_name, ch.title, v.channel_id) LIKE '@%' THEN COALESCE(ca.username, ca.display_name, ch.title, v.channel_id)
+                        ELSE '@' || COALESCE(ca.username, ca.display_name, ch.title, v.channel_id)
+                    END AS channel_username
                 FROM video v
                 JOIN video_sentiment vs ON vs.video_id = v.video_id
                 LEFT JOIN video_score sc ON sc.video_id = v.video_id
+                LEFT JOIN creator_account ca ON ca.account_id = v.channel_id AND ca.platform = v.platform
+                LEFT JOIN channel ch ON ch.channel_id = v.channel_id
                 WHERE vs.category = :category
                   AND v.crawled_at >= :since
                   AND (:platform IS NULL OR v.platform = :platform)
