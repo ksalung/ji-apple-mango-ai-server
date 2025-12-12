@@ -423,15 +423,30 @@ class ContentRepositoryImpl(ContentRepositoryPort):
         rows = self.db.execute(
             text(
                 """
-                SELECT category, platform, date, video_count, video_count_prev,
-                       avg_sentiment, avg_trend, avg_total_score,
-                       search_volume, search_volume_prev, growth_rate, rank
-                FROM category_trend
-                WHERE date = (
-                    SELECT MAX(date) FROM category_trend WHERE (:platform IS NULL OR platform = :platform)
-                )
-                  AND (:platform IS NULL OR platform = :platform)
-                ORDER BY rank ASC NULLS LAST, search_volume DESC NULLS LAST
+                SELECT ct.category,
+                       ct.platform,
+                       ct.date,
+                       ct.video_count,
+                       ct.video_count_prev,
+                       ct.avg_sentiment,
+                       ct.avg_trend,
+                       ct.avg_total_score,
+                       ct.search_volume,
+                       ct.search_volume_prev,
+                       ct.growth_rate,
+                       ct.rank
+                FROM category_trend ct
+                JOIN (
+                    SELECT category, platform, MAX(date) AS max_date
+                    FROM category_trend
+                    WHERE (:platform IS NULL OR platform = :platform)
+                    GROUP BY category, platform
+                ) latest
+                  ON ct.category = latest.category
+                 AND ct.platform = latest.platform
+                 AND ct.date = latest.max_date
+                WHERE (:platform IS NULL OR ct.platform = :platform)
+                ORDER BY ct.rank ASC NULLS LAST, ct.search_volume DESC NULLS LAST
                 LIMIT :limit
                 """
             ),
@@ -450,7 +465,9 @@ class ContentRepositoryImpl(ContentRepositoryPort):
             self.db.rollback()
         except Exception:
             pass
-        since = datetime.utcnow() - timedelta(days=days)
+        # days 파라미터는 "최근 N일간 게시된 영상"을 의미하도록, 수집 시점(crawled_at)이 아닌 게시 시점(published_at)으로 필터링한다.
+        since_date = (datetime.utcnow() - timedelta(days=days)).date()
+        until_date = datetime.utcnow().date()
         rows = self.db.execute(
             text(
                 """
@@ -473,7 +490,6 @@ class ContentRepositoryImpl(ContentRepositoryPort):
                     sc.trend_score AS score_trend,
                     sc.total_score,
                     v.crawled_at,
-                    -- username(또는 display_name/title)을 단 한 번만 @로 prefix 하여 프런트에 바로 전달
                     CASE
                         WHEN COALESCE(ca.username, ca.display_name, ch.title, v.channel_id) LIKE '@%' THEN COALESCE(ca.username, ca.display_name, ch.title, v.channel_id)
                         ELSE '@' || COALESCE(ca.username, ca.display_name, ch.title, v.channel_id)
@@ -484,14 +500,20 @@ class ContentRepositoryImpl(ContentRepositoryPort):
                 LEFT JOIN creator_account ca ON ca.account_id = v.channel_id AND ca.platform = v.platform
                 LEFT JOIN channel ch ON ch.channel_id = v.channel_id
                 WHERE vs.category = :category
-                  AND v.crawled_at >= :since
+                  AND v.published_at::date BETWEEN :since_date AND :until_date
                   AND (:platform IS NULL OR v.platform = :platform)
                 ORDER BY COALESCE(sc.total_score, sc.sentiment_score, sc.trend_score, v.view_count) DESC NULLS LAST,
                          v.crawled_at DESC
                 LIMIT :limit
                 """
             ),
-            {"category": category, "since": since, "platform": platform, "limit": limit},
+            {
+                "category": category,
+                "since_date": since_date,
+                "until_date": until_date,
+                "platform": platform,
+                "limit": limit,
+            },
         ).mappings()
         return [dict(r) for r in rows]
 
