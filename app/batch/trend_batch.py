@@ -33,7 +33,12 @@ async def start_trend_scheduler():
             try:
                 print("[TREND-BATCH] run started")
                 result = await run_trend_batch_once(window_days=window_days, platform=platform)
+                # 급상승 트렌드 결과를 함께 로깅하여 모니터링한다.
+                surging_cats = [c["category"] for c in result.get("surging_categories", [])]
+                surging_keys = [k["keyword"] for k in result.get("surging_keywords", [])]
                 print("[TREND-BATCH] run success:", result)
+                if surging_cats or surging_keys:
+                    print(f"[TREND-BATCH] surging categories: {surging_cats or '-'}, surging keywords: {surging_keys or '-'}")
             except Exception as exc:
                 print("[TREND-BATCH] failed:", exc)
             await asyncio.sleep(interval_minutes * 60)

@@ -6,8 +6,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from content.adapter.input.web.ingestion_router import ingestion_router
+from content.adapter.input.web.topic_router import topic_router
+from content.adapter.input.web.trend_router import trend_router
 from social_oauth.adapter.input.web.google_oauth2_router import authentication_router
 from app.batch.trend_batch import start_trend_scheduler
+from config.database.session import init_db_schema
 
 load_dotenv()
 
@@ -18,8 +21,10 @@ os.environ.setdefault("TORCH_USE_CUDA_DSA", "1")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    트랜드 분석 수치 및 순위화 배치
+    FastAPI lifespan 훅을 활용해 배치 태스크와 리소스를 관리합니다.
     """
+    # DB 스키마 미존재 시 자동 생성하여 UndefinedTable 오류를 예방합니다.
+    init_db_schema()
     app.state.trend_task = asyncio.create_task(start_trend_scheduler())
     try:
         yield
@@ -44,10 +49,15 @@ app.add_middleware(
 
 app.include_router(authentication_router, prefix="/authentication")
 app.include_router(ingestion_router, prefix="/ingestion")
+app.include_router(topic_router, prefix="/topics")
+app.include_router(trend_router, prefix="/trends")
 
 
 @app.get("/health")
 def health_check() -> dict[str, str]:
+    """
+    헬스체크 엔드포인트입니다.
+    """
     return {"status": "ok"}
 
 

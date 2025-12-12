@@ -58,3 +58,34 @@ class ContentRepositoryPort(ABC):
     @abstractmethod
     def log_crawl(self, log: CrawlLog) -> CrawlLog:
         raise NotImplementedError
+
+    # 조회 전용 메서드들
+    @abstractmethod
+    def fetch_videos_by_category(self, category: str, limit: int = 20) -> list[dict]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fetch_videos_by_keyword(self, keyword: str, limit: int = 20) -> list[dict]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fetch_top_keywords_by_category(self, category: str, limit: int = 10) -> list[dict]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fetch_top_keywords_by_keyword(self, keyword: str, limit: int = 10) -> list[dict]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fetch_video_with_scores(self, video_id: str) -> dict | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fetch_hot_category_trends(self, platform: str | None = None, limit: int = 20) -> list[dict]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fetch_recommended_videos_by_category(
+        self, category: str, limit: int = 20, days: int = 14, platform: str | None = None
+    ) -> list[dict]:
+        raise NotImplementedError
