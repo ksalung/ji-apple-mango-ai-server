@@ -1,6 +1,5 @@
 import asyncio
 import os
-from datetime import date, timedelta
 
 from content.application.usecase.trend_aggregation_usecase import TrendAggregationUseCase
 from content.infrastructure.repository.content_repository_impl import ContentRepositoryImpl
@@ -8,7 +7,6 @@ from content.infrastructure.repository.content_repository_impl import ContentRep
 
 async def run_trend_batch_once(as_of: date | None = None, window_days: int = 7, platform: str | None = None) -> dict:
     """
-    카테고리/키워드 트렌드 집계를 단발 실행하는 진입점.
     """
     usecase = TrendAggregationUseCase(ContentRepositoryImpl())
     return usecase.aggregate(as_of=as_of, window_days=window_days, platform=platform)
@@ -16,8 +14,6 @@ async def run_trend_batch_once(as_of: date | None = None, window_days: int = 7, 
 
 async def start_trend_scheduler():
     """
-    반복 실행용 asyncio 루프를 관리.
-    - 환경변수 ENABLE_TREND_BATCH=true 일 때만 가동.
     - BATCH_TREND_INTERVAL_MINUTES (기본 60), BATCH_TREND_WINDOW_DAYS (기본 7) 사용.
     - BATCH_TREND_LOOKBACK_DAYS: 오늘을 anchor로 N일치 as_of를 역순 실행(예: 3이면 오늘, 어제, 그제)
     """
@@ -26,39 +22,17 @@ async def start_trend_scheduler():
 
     interval_minutes = int(os.getenv("BATCH_TREND_INTERVAL_MINUTES", "60"))
     window_days = int(os.getenv("BATCH_TREND_WINDOW_DAYS", "7"))
-    platform = os.getenv("BATCH_PLATFORM")  # 특정 플랫폼만 집계할지 여부
-    lookback_days = int(os.getenv("BATCH_TREND_LOOKBACK_DAYS", "1"))
-    # 스케줄 시작/종료 지점을 명확히 로깅
-    print(
-        f"[TREND-BATCH] scheduler started | interval={interval_minutes}m, window_days={window_days}, "
-        f"lookback_days={lookback_days}, platform={platform or 'all'}"
-    )
     try:
         while True:
             try:
                 print("[TREND-BATCH] run started")
-                today = date.today()
-                for offset in reversed(range(max(1, lookback_days))):
-                    as_of = today - timedelta(days=offset)
-                    result = await run_trend_batch_once(as_of=as_of, window_days=window_days, platform=platform)
-                    print(f"[TREND-BATCH] as_of={as_of} run success:", result)
-                    # 급등 항목을 별도 로그로 남겨 관측 가능하게 함
-                    surging_cats = [c["category"] for c in result.get("surging_categories", [])]
-                    surging_keys = [k["keyword"] for k in result.get("surging_keywords", [])]
-                    if surging_cats or surging_keys:
-                        print(
-                            f"[TREND-BATCH] as_of={as_of} surging categories: {surging_cats or '-'}, "
-                            f"surging keywords: {surging_keys or '-'}"
-                        )
             except Exception as exc:
                 print("[TREND-BATCH] failed:", exc)
             await asyncio.sleep(interval_minutes * 60)
     except asyncio.CancelledError:
-        # 스케줄러 종료 시점에 대한 로그
         print("[TREND-BATCH] scheduler stopped")
         raise
 
 
 if __name__ == "__main__":
-    # 단독 실행: python -m app.batch.trend_batch
     asyncio.run(run_trend_batch_once())
