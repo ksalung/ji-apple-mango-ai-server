@@ -66,7 +66,7 @@ async def process_google_redirect(
     )
 
     # HTTP-only 쿠키 발급
-    redirect_response = RedirectResponse("http://localhost:3000")
+    redirect_response = RedirectResponse("http://localhost:3000/user/main")
     redirect_response.set_cookie(
         key="session_id",
         value=session_id,

@@ -11,6 +11,7 @@ from content.adapter.input.web.trend_router import trend_router
 from social_oauth.adapter.input.web.google_oauth2_router import authentication_router
 from app.batch.trend_batch import start_trend_scheduler
 from config.database.session import init_db_schema
+from social_oauth.adapter.input.web.logout_router import logout_router
 
 load_dotenv()
 
@@ -51,7 +52,7 @@ app.include_router(authentication_router, prefix="/authentication")
 app.include_router(ingestion_router, prefix="/ingestion")
 app.include_router(topic_router, prefix="/topics")
 app.include_router(trend_router, prefix="/trends")
-
+app.include_router(logout_router, prefix="/logout")
 
 @app.get("/health")
 def health_check() -> dict[str, str]:
