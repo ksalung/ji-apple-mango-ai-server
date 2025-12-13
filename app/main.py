@@ -1,4 +1,5 @@
 import os
+import boto3
 import asyncio
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
