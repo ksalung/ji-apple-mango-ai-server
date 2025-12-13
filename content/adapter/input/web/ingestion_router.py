@@ -1,8 +1,5 @@
-from datetime import date, datetime
-
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
 
 from config.settings import OpenAISettings, YouTubeSettings
 from config.database.session import SessionLocal
@@ -136,56 +133,9 @@ async def trigger_trend_batch(window_days: int = 7, platform: str | None = None)
     result = usecase.aggregate(window_days=window_days, platform=platform)
     return result
 
-
-@ingestion_router.get("/category_Tags")
-async def get_category_tags():
-    """
-    category_trend_tag 테이블의 태그 정보를 조회하는 엔드포인트.
-
-    - DB에 저장된 tags 문자열 그대로(`tags_raw`)와
-    - 콤마로 분리한 해시태그 리스트(`tags`)를 함께 반환한다.
-    """
-    db = SessionLocal()
-    try:
-        rows = db.execute(
-            text(
-                """
-                SELECT category, tags, create_at
-                FROM category_trend_tag
-                ORDER BY category
-                """
-            )
-        ).mappings().all()
-
-        items = []
-        for row in rows:
-            tags_str = row["tags"] or ""
-            tags_list = [t.strip() for t in tags_str.split(",") if t.strip()]
-
-            created_raw = row["create_at"]
-            if isinstance(created_raw, (datetime, date)):
-                created_value = created_raw.isoformat()
-            else:
-                # 이미 문자열이거나 다른 타입인 경우 그대로 반환
-                created_value = created_raw
-
-            items.append(
-                {
-                    "category": row["category"],
-                    "tags_raw": tags_str,  # DB에 저장된 원본 문자열
-                    "tags": tags_list,     # 리스트 형태의 해시태그
-                    "create_at": created_value,
-                }
-            )
-
-        return {"items": items}
-    finally:
-        db.close()
-
 # Postman 참고:
 # 1) 건강 확인: GET http://localhost:8000/health
 # 2) 채널 수집: POST http://localhost:8000/ingestion/youtube/channel/<CHANNEL_ID>
 # 3) 영상 수집: POST http://localhost:8000/ingestion/youtube/video/<VIDEO_ID>
 # 4) 분석 조회: GET  http://localhost:8000/ingestion/youtube/video/<VIDEO_ID>/analysis
 # 5) 트렌드 집계: POST http://localhost:8000/ingestion/trend/aggregate
-# 6) 카테고리 집계 : GET http://localhost:8000/ingestion/category_Tags
