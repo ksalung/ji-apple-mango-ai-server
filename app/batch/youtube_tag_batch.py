@@ -25,36 +25,41 @@ async def run_youtube_tag_batch_once() -> Dict[str, Any]:
     - 이렇게 얻은 (category, channel_id) 쌍 각각에 대해 IngestionUseCase.ingest_channel_bundle 을 호출한다.
     - Video.snippet.tags 는 IngestionUseCase 내부에서 keyword_mapping 까지 자동 반영된다.
     """
-    # category_trend 기준으로 최신 일자의 카테고리별 채널 목록을 조회
+    # 1) category_trend 에 존재하는 모든 카테고리 목록을 조회 (날짜와 무관하게 중복 제거)
     with SessionLocal() as db:
-        rows = db.execute(
+        category_rows = db.execute(
             text(
                 """
-                WITH latest AS (
-                    SELECT MAX(date) AS max_date
-                    FROM category_trend
-                    WHERE platform = :platform
-                )
-                SELECT DISTINCT ct.category, v.channel_id
-                FROM category_trend ct
-                JOIN latest l
-                  ON ct.date = l.max_date
-                 AND ct.platform = :platform
-                JOIN video_sentiment vs
-                  ON vs.category = ct.category
-                JOIN video v
-                  ON v.video_id = vs.video_id
-                WHERE v.channel_id IS NOT NULL
+                SELECT DISTINCT category
+                FROM category_trend
+                WHERE platform = :platform
+                  AND category IS NOT NULL
                 """
             ),
             {"platform": "youtube"},
         ).mappings().all()
 
-    category_channels: Dict[str, list[str]] = {}
-    for row in rows:
+        # 2) video_sentiment / video 를 기준으로 각 카테고리에 속한 채널 목록을 조회
+        channel_rows = db.execute(
+            text(
+                """
+                SELECT DISTINCT vs.category, v.channel_id
+                FROM video_sentiment vs
+                JOIN video v ON v.video_id = vs.video_id
+                WHERE vs.category IS NOT NULL
+                  AND v.channel_id IS NOT NULL
+                """
+            )
+        ).mappings().all()
+
+    # 카테고리별 채널 매핑 (채널이 없는 카테고리는 빈 리스트로 두고, 태그 집계만 수행)
+    category_channels: Dict[str, list[str]] = {row["category"]: [] for row in category_rows}
+    for row in channel_rows:
         category = row["category"]
         ch_id = row["channel_id"]
-        # 한 카테고리 안에서 같은 채널이 여러 번 나올 수 있으므로 중복 방지
+        if category not in category_channels:
+            # category_trend 에 없는 카테고리는 스킵
+            continue
         channels = category_channels.setdefault(category, [])
         if ch_id not in channels:
             channels.append(ch_id)
@@ -139,28 +144,35 @@ def _insert_category_trend_tags(category: str) -> None:
     - category: category_trend_tag.category 에 저장될 카테고리 식별자
     """
     with SessionLocal() as db:
-        # Postgres 기준: video.tags (콤마 구분 문자열)를 분리해서 고유 태그만 모은 뒤 다시 합친다.
+        # Postgres 기준: video.tags (콤마 구분 문자열)를 분리해서 태그별 등장 횟수를 계산한 뒤,
+        # 가장 많이 등장한 상위 5개 태그만 콤마로 합쳐 저장한다.
         tags_row = db.execute(
             text(
                 """
                 WITH splitted AS (
-                    SELECT DISTINCT trim(tag) AS tag
+                    SELECT trim(tag) AS tag
                     FROM video v
                     JOIN video_sentiment vs ON vs.video_id = v.video_id
                     CROSS JOIN LATERAL unnest(string_to_array(COALESCE(v.tags, ''), ',')) AS tag
                     WHERE vs.category = :category
                       AND COALESCE(v.tags, '') <> ''
+                ),
+                ranked AS (
+                    SELECT tag, COUNT(*) AS cnt
+                    FROM splitted
+                    GROUP BY tag
+                    ORDER BY cnt DESC
+                    LIMIT 5
                 )
-                SELECT string_agg(tag, ',') AS tags
-                FROM splitted
+                SELECT string_agg(tag, ',' ORDER BY cnt DESC) AS tags
+                FROM ranked
                 """
             ),
             {"category": category},
         ).mappings().one_or_none()
 
-        if not tags_row or not tags_row.get("tags"):
-            # 수집된 태그가 없으면 아무 것도 기록하지 않는다.
-            return
+        # 태그가 하나도 없으면 빈 문자열로 저장하여 카테고리 자체는 유지한다.
+        tags_value = (tags_row or {}).get("tags") or ""
 
         # 동일 category 가 이미 존재하면 삭제 후 새로 삽입한다.
         db.execute(
@@ -177,7 +189,7 @@ def _insert_category_trend_tags(category: str) -> None:
             ),
             {
                 "category": category,
-                "tags": tags_row["tags"],
+                "tags": tags_value,
             },
         )
         db.commit()
