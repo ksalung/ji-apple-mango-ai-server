@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from account.application.port.account_repository_port import AccountRepositoryPort
 from account.domain.account import Account
+from account.domain.interest import AccountInterest
 
 
 class AccountUseCase:
@@ -30,3 +31,33 @@ class AccountUseCase:
             return []
 
         return self.repo.find_all_by_id(ids)
+
+    def update_profile(
+        self,
+        account_id: int,
+        nickname: Optional[str] = None,
+        bio: Optional[str] = None,
+        profile_image_url: Optional[str] = None,
+    ) -> Account:
+        account = self.repo.find_by_id(account_id)
+        if account is None:
+            raise ValueError("Account not found")
+
+        account.update_profile(nickname=nickname, bio=bio, profile_image_url=profile_image_url)
+        return self.repo.update(account)
+
+    def list_interests(self, account_id: int) -> List[AccountInterest]:
+        if self.repo.find_by_id(account_id) is None:
+            raise ValueError("Account not found")
+        return self.repo.list_interests(account_id)
+
+    def add_interest(self, account_id: int, interest: str) -> AccountInterest:
+        if self.repo.find_by_id(account_id) is None:
+            raise ValueError("Account not found")
+        interest_model = AccountInterest(account_id=account_id, interest=interest)
+        return self.repo.add_interest(interest_model)
+
+    def delete_interest(self, account_id: int, interest_id: int) -> None:
+        if self.repo.find_by_id(account_id) is None:
+            raise ValueError("Account not found")
+        self.repo.delete_interest(account_id, interest_id)
