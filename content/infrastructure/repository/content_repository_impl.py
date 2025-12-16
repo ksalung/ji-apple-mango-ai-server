@@ -453,7 +453,7 @@ class ContentRepositoryImpl(ContentRepositoryPort):
         rows = self.db.execute(
             text(
                 """
-                SELECT ct.category,
+                 SELECT ct.category,
                        ct.platform,
                        ct.date,
                        ct.video_count,
@@ -496,6 +496,7 @@ class ContentRepositoryImpl(ContentRepositoryPort):
         except Exception:
             pass
         # days 파라미터는 "최근 N일간 게시된 영상"을 의미하도록, 수집 시점(crawled_at)이 아닌 게시 시점(published_at)으로 필터링한다.
+            # days 파라미터는 "최근 N일간 게시된 영상"을 의미하도록, 수집 시점(crawled_at)이 아닌 게시 시점(published_at)으로 필터링한다.
         since_date = (datetime.utcnow() - timedelta(days=days)).date()
         until_date = datetime.utcnow().date()
         rows = self.db.execute(
@@ -520,6 +521,7 @@ class ContentRepositoryImpl(ContentRepositoryPort):
                     sc.trend_score AS score_trend,
                     sc.total_score,
                     v.crawled_at,
+                    -- username(또는 display_name/title)을 단 한 번만 @로 prefix 하여 프런트에 바로 전달
                     CASE
                         WHEN COALESCE(ca.username, ca.display_name, ch.title, v.channel_id) LIKE '@%' THEN COALESCE(ca.username, ca.display_name, ch.title, v.channel_id)
                         ELSE '@' || COALESCE(ca.username, ca.display_name, ch.title, v.channel_id)
@@ -530,7 +532,7 @@ class ContentRepositoryImpl(ContentRepositoryPort):
                 LEFT JOIN creator_account ca ON ca.account_id = v.channel_id AND ca.platform = v.platform
                 LEFT JOIN channel ch ON ch.channel_id = v.channel_id
                 WHERE vs.category = :category
-                  AND v.published_at::date BETWEEN :since_date AND :until_date
+                AND v.published_at::date BETWEEN :since_date AND :until_date
                   AND (:platform IS NULL OR v.platform = :platform)
                 ORDER BY COALESCE(sc.total_score, sc.sentiment_score, sc.trend_score, v.view_count) DESC NULLS LAST,
                          v.crawled_at DESC

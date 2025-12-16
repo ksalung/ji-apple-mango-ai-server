@@ -10,6 +10,26 @@ DROP TABLE IF EXISTS video_comment CASCADE;
 DROP TABLE IF EXISTS video CASCADE;
 DROP TABLE IF EXISTS creator_account CASCADE;
 DROP TABLE IF EXISTS channel CASCADE;
+DROP TABLE IF EXISTS account_interest CASCADE;
+DROP TABLE IF EXISTS account2 CASCADE;
+
+CREATE TABLE account2 (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    nickname VARCHAR(255) NOT NULL,
+    bio TEXT,
+    profile_image_url VARCHAR(500),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE account_interest (
+    id SERIAL PRIMARY KEY,
+    account_id INT NOT NULL,
+    interest VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_account_interest_unique UNIQUE (account_id, interest)
+);
 
 CREATE TABLE channel (
     channel_id VARCHAR(100) PRIMARY KEY,

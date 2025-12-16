@@ -13,7 +13,6 @@ from config.database.session import SessionLocal
 
 class TrendAggregationUseCase:
     def __init__(self, repository: ContentRepositoryPort, session_factory=SessionLocal):
-        # 주기적으로 실행되는 트렌드 집계를 담당하는 유스케이스
         self.repository = repository
         self.session_factory = session_factory
 
@@ -26,11 +25,7 @@ class TrendAggregationUseCase:
         surge_growth_threshold: float | None = None,
     ) -> dict:
         """
-        최근 window_days 기간의 콘텐츠를 기준으로 키워드/카테고리 트렌드를 집계한다.
         - as_of: 기준 일자 (default: 오늘)
-        - window_days: 집계 대상 기간 길이
-        - platform: 특정 플랫폼만 필터링 (None이면 전체)
-        - surge_growth_threshold: 급등으로 간주할 성장률 임계치
         """
         as_of = as_of or date.today()
         from_date = as_of - timedelta(days=window_days - 1)
@@ -50,18 +45,6 @@ class TrendAggregationUseCase:
             except ValueError:
                 surge_threshold = 1.0
 
-        # 새 데이터가 없으면 불필요한 집계를 건너뛴다.
-        if not self._has_new_data(as_of=as_of, from_date=from_date, platform=platform):
-            return {
-                "as_of": str(as_of),
-                "keyword_trend_count": 0,
-                "category_trend_count": 0,
-                "surging_keywords": [],
-                "surging_categories": [],
-                "skipped": True,
-                "reason": "no new data in window",
-            }
-
         with self.session_factory() as db:
             keyword_rows = self._aggregate_keywords(db, from_date, as_of, platform, velocity_days)
             keyword_prev_rows = self._aggregate_keywords(db, prev_from, prev_to, platform, velocity_days)
@@ -76,15 +59,12 @@ class TrendAggregationUseCase:
                 limit=int(os.getenv("TREND_TOP_ANALYSIS_LIMIT", "30")),
             )
 
-        # 성장률 계산
         keyword_rows = self._attach_growth(keyword_rows, keyword_prev_rows, key_fields=("keyword", "platform"))
         category_rows = self._attach_growth(category_rows, category_prev_rows, key_fields=("category", "platform"))
 
-        # 플랫폼별 랭킹 적용 (search_volume 내림차순)
         keyword_ranked = self._apply_rank(keyword_rows)
         category_ranked = self._apply_rank(category_rows)
 
-        # 결과 upsert
         for row in keyword_ranked:
             trend = KeywordTrend(
                 keyword=row["keyword"],
@@ -146,6 +126,7 @@ class TrendAggregationUseCase:
         키워드 기준 집계 + 스냅샷 기반 속도(조회/좋아요/댓글) 계산.
         """
         prev_anchor = as_of - timedelta(days=velocity_days)
+
         rows = db.execute(
             text(
                 """
@@ -354,8 +335,6 @@ class TrendAggregationUseCase:
         self, current_rows: list[dict], prev_rows: list[dict], key_fields: tuple[str, str]
     ) -> list[dict]:
         """
-        직전 기간 데이터를 참고하여 성장률을 계산.
-        key_fields: 비교 기준 키(예: ('category','platform'))
         """
         prev_map: dict[tuple[str, str], dict] = {}
         for row in prev_rows:

@@ -406,9 +406,6 @@ pyrightconfig.json
 # exclude
 *.pdf
 
-# exclude .env
-.env
-
 # exclude .json
 *.json
 
@@ -422,12 +419,15 @@ pyrightconfig.json
 # exclude model under directory
 models/
 
-# exclude pdf
-*.pdf
-
 # exclude txt
 *.txt
 
 # exclude donwloaded_docs
 downloaded_docs/
 !requirements.txt
+
+# local environment and virtualenv
+.env
+.env.*
+!.env.example
+.apple/
