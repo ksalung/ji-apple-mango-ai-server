@@ -164,3 +164,17 @@ class CrawlLogORM(Base):
     status = Column(String(50))
     message = Column(Text)
     crawled_at = Column(DateTime, default=datetime.utcnow)
+
+
+class VideoMetricsSnapshotORM(Base):
+    __tablename__ = "video_metrics_snapshot"
+    __table_args__ = (
+        PrimaryKeyConstraint("video_id", "snapshot_date", "platform", name="pk_video_metrics_snapshot"),
+    )
+
+    video_id = Column(String(100))
+    platform = Column(String(50), default="youtube")
+    snapshot_date = Column(Date)
+    view_count = Column(BigInteger)
+    like_count = Column(BigInteger)
+    comment_count = Column(BigInteger)

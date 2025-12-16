@@ -1,6 +1,7 @@
 DROP TABLE IF EXISTS crawl_log CASCADE;
 DROP TABLE IF EXISTS video_score CASCADE;
 DROP TABLE IF EXISTS keyword_mapping CASCADE;
+DROP TABLE IF EXISTS video_metrics_snapshot CASCADE;
 DROP TABLE IF EXISTS keyword_trend CASCADE;
 DROP TABLE IF EXISTS category_trend CASCADE;
 DROP TABLE IF EXISTS comment_sentiment CASCADE;
@@ -135,6 +136,16 @@ CREATE TABLE video_score (
     trend_score DECIMAL(6,3),
     total_score DECIMAL(6,3),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE video_metrics_snapshot (
+    video_id VARCHAR(100),
+    platform VARCHAR(50) DEFAULT 'youtube',
+    snapshot_date DATE,
+    view_count BIGINT,
+    like_count BIGINT,
+    comment_count BIGINT,
+    PRIMARY KEY (video_id, snapshot_date, platform)
 );
 
 CREATE TABLE crawl_log (

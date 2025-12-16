@@ -12,6 +12,7 @@ from content.domain.video import Video
 from content.domain.video_comment import VideoComment
 from content.domain.video_score import VideoScore
 from content.domain.video_sentiment import VideoSentiment
+from content.domain.video_metrics_snapshot import VideoMetricsSnapshot
 
 
 class ContentRepositoryPort(ABC):
@@ -57,6 +58,10 @@ class ContentRepositoryPort(ABC):
 
     @abstractmethod
     def log_crawl(self, log: CrawlLog) -> CrawlLog:
+        raise NotImplementedError
+
+    @abstractmethod
+    def upsert_video_metrics_snapshot(self, snapshot: VideoMetricsSnapshot) -> None:
         raise NotImplementedError
 
     # 조회 전용 메서드들
