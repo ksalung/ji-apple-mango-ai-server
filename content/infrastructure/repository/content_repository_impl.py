@@ -16,6 +16,7 @@ from content.domain.video import Video
 from content.domain.video_comment import VideoComment
 from content.domain.video_score import VideoScore
 from content.domain.video_sentiment import VideoSentiment
+from content.domain.video_metrics_snapshot import VideoMetricsSnapshot
 from content.infrastructure.orm.models import (
     ChannelORM,
     CreatorAccountORM,
@@ -28,6 +29,7 @@ from content.infrastructure.orm.models import (
     KeywordMappingORM,
     VideoScoreORM,
     CrawlLogORM,
+    VideoMetricsSnapshotORM,
 )
 
 
@@ -255,6 +257,34 @@ class ContentRepositoryImpl(ContentRepositoryPort):
         self.db.commit()
         log.id = orm.id
         return log
+
+    def upsert_video_metrics_snapshot(self, snapshot: VideoMetricsSnapshot) -> None:
+        """
+        일별 영상 지표 스냅샷을 upsert합니다. 동일 (video_id, snapshot_date, platform) 키에 대해서는 값을 갱신합니다.
+        """
+        # NOTE: SQLAlchemy ORM보다 ON CONFLICT가 명확한 raw SQL을 사용합니다.
+        self.db.execute(
+            text(
+                """
+                INSERT INTO video_metrics_snapshot (video_id, platform, snapshot_date, view_count, like_count, comment_count)
+                VALUES (:video_id, :platform, :snapshot_date, :view_count, :like_count, :comment_count)
+                ON CONFLICT (video_id, snapshot_date, platform)
+                DO UPDATE SET
+                    view_count = EXCLUDED.view_count,
+                    like_count = EXCLUDED.like_count,
+                    comment_count = EXCLUDED.comment_count
+                """
+            ),
+            {
+                "video_id": snapshot.video_id,
+                "platform": snapshot.platform or "youtube",
+                "snapshot_date": snapshot.snapshot_date,
+                "view_count": snapshot.view_count,
+                "like_count": snapshot.like_count,
+                "comment_count": snapshot.comment_count,
+            },
+        )
+        self.db.commit()
 
     def fetch_videos_by_category(self, category: str, limit: int = 20) -> list[dict]:
         """

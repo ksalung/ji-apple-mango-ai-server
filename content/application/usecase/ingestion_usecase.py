@@ -1,3 +1,5 @@
+import os
+from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
 from content.application.port.content_repository_port import ContentRepositoryPort
@@ -47,6 +49,21 @@ class IngestionUseCase:
         self.repository.upsert_channel(channel)
 
         videos = list(client.fetch_videos(channel_id, max_results=max_videos))
+        # 최신 업로드 필터: 기본 14일 내 업로드본만 유지(환경변수 INGESTION_RECENT_DAYS로 조정 가능)
+        recent_days = int(os.getenv("INGESTION_RECENT_DAYS", "14"))
+        if recent_days > 0:
+            # 시간대가 섞여 있을 때 naive/aware 비교 오류를 막기 위해 UTC 기준으로 통일해서 비교한다.
+            cutoff = datetime.now(timezone.utc) - timedelta(days=recent_days)
+            videos = [
+                v
+                for v in videos
+                if (
+                    self._to_utc(v.published_at)
+                    or self._to_utc(v.crawled_at)
+                    or cutoff
+                )
+                >= cutoff
+            ]
         ingested_videos: list[str] = []
         ingested_comments: int = 0
 
@@ -105,6 +122,7 @@ class IngestionUseCase:
         # 한국어 주석: 단일 영상의 본문·태그·댓글 등 전체 정보를 수집해 분석과 추천의 기반을 만듭니다.
         video = client.fetch_video(video_id)
         video.platform = client.platform
+        video.crawled_at = video.crawled_at or datetime.utcnow()
         self._persist_video(video)
 
         comments: list[VideoComment] = []
@@ -156,6 +174,8 @@ class IngestionUseCase:
         return count
 
     def _persist_video(self, video: Video):
+        # 한국어 주석: 수집 시각이 비어 있으면 현재 시각으로 채워 윈도우 필터에서 제외되지 않게 합니다.
+        video.crawled_at = video.crawled_at or datetime.utcnow()
         self.repository.upsert_video(video)
         if not video.tags:
             return
@@ -171,3 +191,12 @@ class IngestionUseCase:
                     weight=1.0,
                 )
             )
+
+    @staticmethod
+    def _to_utc(dt: datetime | None) -> datetime | None:
+        """타임존 여부에 따라 UTC aware datetime으로 변환한다."""
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)

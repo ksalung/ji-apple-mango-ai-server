@@ -15,10 +15,21 @@ from content.infrastructure.repository.content_repository_impl import ContentRep
 
 ingestion_router = APIRouter(tags=["ingestion"])
 
-# 공용 리포지토리/유스케이스를 미리 생성해 재사용한다.
+# 공용 리포지토리/클라이언트는 유지하되, OPENAI_API_KEY가 뒤늦게 설정되어도 반영되도록 SentimentUseCase는 지연 초기화한다.
 repository = ContentRepositoryImpl()
-sentiment_usecase = SentimentUseCase(OpenAISettings()) if OpenAISettings().api_key else None
-ingestion_usecase = IngestionUseCase(repository, sentiment_usecase)
+_sentiment_usecase: SentimentUseCase | None = None
+
+
+def get_sentiment_usecase() -> SentimentUseCase | None:
+    """환경 변수로 OPENAI_API_KEY가 나중에 주입되는 경우를 대비해 최초 접근 시 생성한다."""
+    global _sentiment_usecase
+    if _sentiment_usecase is not None:
+        return _sentiment_usecase
+    settings = OpenAISettings()
+    if not settings.api_key:
+        return None
+    _sentiment_usecase = SentimentUseCase(settings)
+    return _sentiment_usecase
 
 
 def resolve_platform_client(platform: str):
@@ -92,6 +103,7 @@ async def ingest_channel(platform: str, channel_id: str, request: IngestChannelR
     """
     client = resolve_platform_client(platform)
     try:
+        ingestion_usecase = IngestionUseCase(repository, get_sentiment_usecase())
         result = ingestion_usecase.ingest_channel_bundle(
             client,
             channel_id,
@@ -113,6 +125,7 @@ async def ingest_video(platform: str, video_id: str, request: IngestVideoRequest
     """
     client = resolve_platform_client(platform)
     try:
+        ingestion_usecase = IngestionUseCase(repository, get_sentiment_usecase())
         result = ingestion_usecase.ingest_video(
             client,
             video_id,

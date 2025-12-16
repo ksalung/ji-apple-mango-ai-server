@@ -203,24 +203,38 @@ class YouTubeClient(PlatformClientPort):
         return items[0]["id"].get("channelId")
 
     def _list_video_ids(self, channel_id: str, max_results: int) -> List[str]:
-        try:
-            response = (
-                self.service.search()
-                .list(
-                    part="id",
-                    channelId=channel_id,
-                    maxResults=min(max_results, 50),
-                    type="video",
-                    order="date",
-                )
-                .execute()
-            )
-        except HttpError as exc:
-            raise RuntimeError(f"YouTube search failed: {exc}") from exc
         ids: List[str] = []
-        for item in response.get("items", []):
-            if item["id"]["kind"] == "youtube#video":
-                ids.append(item["id"]["videoId"])
+        page_token = None
+        remaining = max_results
+        while remaining > 0:
+            fetch_size = min(remaining, 50)
+            try:
+                response = (
+                    self.service.search()
+                    .list(
+                        part="id",
+                        channelId=channel_id,
+                        maxResults=fetch_size,
+                        type="video",
+                        order="date",
+                        pageToken=page_token,
+                    )
+                    .execute()
+                )
+            except HttpError as exc:
+                raise RuntimeError(f"YouTube search failed: {exc}") from exc
+
+            for item in response.get("items", []):
+                if item["id"]["kind"] == "youtube#video":
+                    ids.append(item["id"]["videoId"])
+                    remaining -= 1
+                    if remaining <= 0:
+                        break
+
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
+
         return ids
 
     @staticmethod
